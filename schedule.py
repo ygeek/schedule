@@ -55,6 +55,7 @@ class DLX:
             self._vacation = constraints['vacation']
             assert 0 <= self._vacation <= 7
             self._max_rest_gap = constraints['max-rest-gap']
+            self._max_period_type = constraints['max-period-type']
 
         def period():
             self._periods = {}
@@ -140,10 +141,27 @@ class DLX:
                 end = (p['date-range'][1] - self._begin).days + 1
                 days = range(begin, end)
                 staffs = p['staff-id']
-                assert len(staffs) > 1
+                assert len(staffs) == 2
+                for day in range(begin, end):
+                    if day not in self._partners:
+                        self._partners[day] = []
+                    self._partners[day].append(tuple(staffs))
 
         def confliction():
             self._conflictions = {}
+            if 'confliction' not in constraints: return
+            for c in constraints['confliction']:
+                assert c['date-range'][0] >= self._begin
+                assert c['date-range'][1] <= self._end
+                begin = (c['date-range'][0] - self._begin).days
+                end = (c['date-range'][1] - self._begin).days + 1
+                days = range(begin, end)
+                staffs = c['staff-id']
+                assert len(staffs) == 2
+                for day in range(begin, end):
+                    if day not in self._conflictions:
+                        self._conflictions[day] = []
+                    self._conflictions[day].append(tuple(staffs))
 
         basic()
         period()
@@ -154,19 +172,6 @@ class DLX:
         prefer_vacation()
         partner()
         confliction()
-
-        #for p in self._periods.values():
-        #    print(p)
-        #for t in self._titles.values():
-        #    print(t)
-        #for s in self._staffs.values():
-        #    print(s)
-        #for sn in self._staff_numbers.items():
-        #    print(sn)
-        #for pp in self._prefer_periods.items():
-        #    print(pp)
-        #for pv in self._prefer_vacations.items():
-        #    print(pv)
 
     class Node:
         def __init__(self):
@@ -247,34 +252,14 @@ class DLX:
         node.appendToColumn(col)
         return node
 
-    def createArrangementColumns(self):
-        self._arrangement_cols = {}
-        for day in range(self._days):
-            for staff in self._staffs:
-                self._arrangement_cols[(day, staff)] = self.createColumn()
+    def getRow(self, symbol):
+        self._rows[symbol] = self.createRow(symbol)
+        return self._rows[symbol]
 
-    def createVacationColumns(self):
-        self._vacation_cols = {}
-        if self._vacation <= 0: return
-        for week in range(self._days // 7):
-            for staff in self._staffs:
-                self._vacation_cols[(week, staff)] = self.createColumn()
-
-    def createPeriodColumns(self):
-        self._period_cols = {}
-        for day in range(self._days):
-            for period in self._periods:
-                for title in self._titles:
-                    key = (day, period, title)
-                    if key not in self._staff_numbers: continue
-                    number = self._staff_numbers[key][0]
-                    if number <= 0: continue
-                    self._period_cols[key] = self.createColumn()
-
-    def createPreferColumns(self):
-        self._prefer_cols = {}
-        for day, staff in self._prefer_periods:
-            self._prefer_cols[(day, staff)] = self.createColumn()
+    def getColumn(self, key):
+        if key not in self._cols:
+            self._cols[key] = self.createColumn()
+        return self._cols[key]
 
     def createVacationRows(self):
         self._vacation_rows = {}
@@ -286,17 +271,15 @@ class DLX:
                 for weekdays in itertools.combinations(range(7), self._vacation):
                     days = set(map(lambda day: week * 7 + day, weekdays))
                     if not prefers.issubset(days): continue
-                    key = (week, staff, tuple(sorted(days)))
-                    symbol = ('vacation', *key)
-                    row = self.createRow(symbol)
-                    self._vacation_rows[key] = row
+                    symbol = ('vacation', week, staff, tuple(sorted(days)))
+                    row = self.getRow(symbol)
                     for day in days:
-                        col = self._arrangement_cols[(day, staff)]
+                        col = self.getColumn(('arrangement', day, staff))
                         self.addNode(row, col)
                         if (day, staff) in self._prefer_periods:
-                            col = self._prefer_cols[(day, staff)]
+                            col = self.getColumn(('prefer', day, staff))
                             self.addNode(row, col)
-                    col = self._vacation_cols[(week, staff)]
+                    col = self.getColumn(('vacation', week, staff))
                     self.addNode(row, col)
 
     def createArrangementRows(self):
@@ -313,47 +296,109 @@ class DLX:
                         for staffs in map(set,
                                           itertools.combinations(available_staffs,
                                                                  number)):
-                            key = (day, period, title, tuple(sorted(staffs)))
-                            symbol = ('arrangement', *key)
-                            row = self.createRow(symbol)
-                            self._arrangement_rows[key] = row
+                            symbol = ('arrangement', day, period, title, tuple(sorted(staffs)))
+                            row = self.getRow(symbol)
                             for staff in staffs:
-                                col = self._arrangement_cols[(day, staff)]
+                                col = self.getColumn(('arrangement', day, staff))
                                 self.addNode(row, col)
                                 if ((day, staff) in self._prefer_periods and
                                     period in self._prefer_periods[(day, staff)]):
-                                    col = self._prefer_cols[(day, staff)]
+                                    col = self.getColumn(('prefer', day, staff))
                                     self.addNode(row, col)
-                            col = self._period_cols[(day, period, title)]
+                            col = self.getColumn(('period', day, period, title))
                             self.addNode(row, col)
-
 
     def __init__(self, constraints):
         self.preprocess(constraints)
         self.createRoot()
-        self.createArrangementColumns()
-        self.createVacationColumns()
-        self.createPeriodColumns()
-        self.createPreferColumns()
-        print('columns: %d' % sum([len(self._arrangement_cols),
-                                   len(self._vacation_cols),
-                                   len(self._period_cols),
-                                   len(self._prefer_cols)]))
+        self._rows = {}
+        self._cols = {}
+        self._staff_arrangements = {}
+        self._staff_vacations = {}
+        self._staff_periods = {}
+        for staff in self._staffs:
+            self._staff_arrangements[staff] = {}
+            self._staff_vacations[staff] = {}
+            self._staff_periods[staff] = {}
         self.createVacationRows()
         self.createArrangementRows()
-        print('rows: %d' % sum([len(self._vacation_rows),
-                                len(self._arrangement_rows)]))
-        print([node._count for node in self._root.iterInRow()])
+        print('rows: %d, cols: %d' % (len(self._rows), len(self._cols)))
+        print([col._count for col in self._root.iterInRow()])
         self._solution = []
 
     def solve(self):
-        def cover(col):
+        def validate(symbol):
+            if symbol[0] == 'arrangement':
+                _, day, period, _, staffs = symbol
+                for staff in staffs:
+                    if day - 1 in self._staff_arrangements[staff]:
+                        prev_period = self._staff_arrangements[staff][day - 1]
+                        if period in self._periods[prev_period]._conflictions:
+                            return False
+                    if day + 1 in self._staff_arrangements[staff]:
+                        next_period = self._staff_arrangements[staff][day + 1]
+                        if next_period in self._periods[period]._conflictions:
+                            return False
+                    types = set(self._staff_periods[staff])
+                    types.add(period)
+                    if len(types) > self._max_period_type:
+                        return False
+                    if day in self._conflictions:
+                        for x, y in self._conflictions[day]:
+                            if y == staff: x, y = y, x
+                            if (y in self._staff_arrangements and
+                                day in self._staff_arrangements[y] and
+                                self._staff_arrangements[y][day] == period):
+                                return False
+                if day in self._partners:
+                    for partner in self._partners[day]:
+                        if (partner[0] in staffs) ^ (partner[1] in staffs):
+                            return False
+            if symbol[0] == 'vacation':
+                _, week, staff, days = symbol
+                if week - 1 in self._staff_vacations[staff]:
+                    prev_days = self._staff_vacations[staff][week - 1]
+                    if days[0] - prev_days[-1] > self._max_rest_gap:
+                        return False
+                if week + 1 in self._staff_vacations[staff]:
+                    next_days = self._staff_vacations[staff][week + 1]
+                    if next_days[0] - days[-1] > self._max_rest_gap:
+                        return False
+            return True
+
+        def apply_(symbol):
+            self._solution.append(row._row._symbol)
+            if symbol[0] == 'arrangement':
+                _, day, period, _, staffs = symbol
+                for staff in staffs:
+                    self._staff_arrangements[staff][day] = period
+                    if period not in self._staff_periods[staff]:
+                        self._staff_periods[staff][period] = 0
+                    self._staff_periods[staff][period] += 1
+            if symbol[0] == 'vacation':
+                _, week, staff, days = symbol
+                self._staff_vacations[staff][week] = days
+
+        def restore(symbol):
+            self._solution.pop()
+            if symbol[0] == 'arrangement':
+                _, day, period, _, staffs = symbol
+                for staff in staffs:
+                    del self._staff_arrangements[staff][day]
+                    self._staff_periods[staff][period] -= 1
+                    if self._staff_periods[staff][period] == 0:
+                        del self._staff_periods[staff][period]
+            if symbol[0] == 'vacation':
+                _, week, staff, days = symbol
+                del self._staff_vacations[staff][week]
+
+        def unlink(col):
             col.unlinkInRow()
             for row in col.iterInColumn():
                 for node in row.iterInRow():
                     node.unlinkInColumn()
 
-        def resume(col):
+        def relink(col):
             for row in reversed(list(col.iterInColumn())):
                 for node in reversed(list(row.iterInRow())):
                     node.relinkInColumn()
@@ -363,18 +408,19 @@ class DLX:
         if self._root._right == self._root: return True
         selected = min(self._root.iterInRow(), key=lambda col: col._count)
         #print('%s: %d' % (selected, selected._count))
-        cover(selected)
+        unlink(selected)
         for row in selected.iterInColumn():
-            self._solution.append(row._row._symbol)
+            if not validate(row._row._symbol): continue
+            apply_(row._row._symbol)
             for node in row.iterInRow():
                 if node._row == node: continue
-                cover(node._col)
+                unlink(node._col)
             if self.solve(): return True
             for node in reversed(list(row.iterInRow())):
                 if node._row == node: continue
-                resume(node._col)
-            self._solution.pop()
-        resume(selected)
+                relink(node._col)
+            restore(row._row._symbol)
+        relink(selected)
         return False
 
     def outputSolution(self, filename):
@@ -410,4 +456,5 @@ if __name__ == '__main__':
     if not solver.solve():
         print('no solution')
         sys.exit(0)
+    print('solved')
     solver.outputSolution('solution.csv')
