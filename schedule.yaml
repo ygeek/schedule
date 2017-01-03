@@ -1,6 +1,6 @@
-date-range: [2016-12-01, 2016-12-07]
+date-range: [2016-12-01, 2016-12-14]
 min-rest-time: 10   # hour(s)
-vacation: 1         # day(s)
+vacation: 2         # day(s)
 max-rest-gap: 8     # day(s)
 
 period:
@@ -46,17 +46,20 @@ staff:
       title-id: 1
 
 staff-number:
-    - date-range: [2016-12-01, 2016-12-07]
+    - date-range: [2016-12-01, 2016-12-14]
       period-id: [1, 2, 3]
       title-id: 1
       number-range: [1, 2]
 
 prefer-period:
+    - staff-id: 1
+      date-range: [2016-12-01, 2016-12-14]
+      period-id: 2
     - staff-id: 5
-      date-range: [2016-12-01, 2016-12-07]
+      date-range: [2016-12-01, 2016-12-14]
       period-id: 1
     - staff-id: 3
-      date-range: [2016-12-01, 2016-12-07]
+      date-range: [2016-12-01, 2016-12-14]
       period-id: 3
 
 
@@ -64,15 +67,19 @@ prefer-vacation:
   - staff-id: 1
     days:
         - 2016-12-01
+        - 2016-12-12
   - staff-id: 2
     days:
         - 2016-12-01
+        - 2016-12-13
   - staff-id: 3
     days:
         - 2016-12-04
+        - 2016-12-14
   - staff-id: 4
     days:
         - 2016-12-03
+        - 2016-12-10
 
       #partner:
       #    - date-range:

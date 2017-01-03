@@ -227,10 +227,11 @@ class DLX:
         self._root._count = 0
         return self._root
 
-    def createRow(self):
+    def createRow(self, symbol):
         row = DLX.Node()
         row._row = row
         row.appendToColumn(self._root)
+        row._symbol = symbol
         return row
 
     def createColumn(self):
@@ -286,7 +287,8 @@ class DLX:
                     days = set(map(lambda day: week * 7 + day, weekdays))
                     if not prefers.issubset(days): continue
                     key = (week, staff, tuple(sorted(days)))
-                    row = self.createRow()
+                    symbol = ('vacation', *key)
+                    row = self.createRow(symbol)
                     self._vacation_rows[key] = row
                     for day in days:
                         col = self._arrangement_cols[(day, staff)]
@@ -311,8 +313,9 @@ class DLX:
                         for staffs in map(set,
                                           itertools.combinations(available_staffs,
                                                                  number)):
-                            row = self.createRow()
                             key = (day, period, title, tuple(sorted(staffs)))
+                            symbol = ('arrangement', *key)
+                            row = self.createRow(symbol)
                             self._arrangement_rows[key] = row
                             for staff in staffs:
                                 col = self._arrangement_cols[(day, staff)]
@@ -341,6 +344,7 @@ class DLX:
         print('rows: %d' % sum([len(self._vacation_rows),
                                 len(self._arrangement_rows)]))
         print([node._count for node in self._root.iterInRow()])
+        self._solution = []
 
     def solve(self):
         def cover(col):
@@ -355,13 +359,13 @@ class DLX:
                     node.relinkInColumn()
             col.relinkInRow()
 
-        print([col._count for col in self._root.iterInRow()])
+        #print([col._count for col in self._root.iterInRow()])
         if self._root._right == self._root: return True
         selected = min(self._root.iterInRow(), key=lambda col: col._count)
         #print('%s: %d' % (selected, selected._count))
         cover(selected)
         for row in selected.iterInColumn():
-            # choose
+            self._solution.append(row._row._symbol)
             for node in row.iterInRow():
                 if node._row == node: continue
                 cover(node._col)
@@ -369,16 +373,41 @@ class DLX:
             for node in reversed(list(row.iterInRow())):
                 if node._row == node: continue
                 resume(node._col)
-            # dechoose
+            self._solution.pop()
         resume(selected)
         return False
+
+    def outputSolution(self, filename):
+        table = []
+        header = [''] + list(map(str, [self._begin + datetime.timedelta(days=day)
+                                       for day in range(self._days)]))
+        table.append(header)
+        staff_row = {}
+        for sid, staff in self._staffs.items():
+            row = [staff._name] + [''] * self._days
+            table.append(row)
+            staff_row[staff._id] = len(table) - 1
+        for symbol in self._solution:
+            if symbol[0] == 'arrangement':
+                _, day, pid, _, staffs = symbol
+                period = self._periods[pid]._name
+                for staff in staffs:
+                    row = staff_row[staff]
+                    table[row][day + 1] = period
+            if symbol[0] == 'vacation':
+                _, _, staff, days = symbol
+                row = staff_row[staff]
+                for day in days:
+                    table[row][day + 1] = '公休'
+        open(filename, 'w').writelines(','.join(row) + '\n' for row in table)
+
 
 if __name__ == '__main__':
     filename = 'schedule.yaml'
     constraints = yaml.load(open(filename))
     #print(constraints)
     solver = DLX(constraints)
-    if solver.solve():
-        print('solved')
-    else:
+    if not solver.solve():
         print('no solution')
+        sys.exit(0)
+    solver.outputSolution('solution.csv')
