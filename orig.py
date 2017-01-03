@@ -247,14 +247,34 @@ class DLX:
         node.appendToColumn(col)
         return node
 
-    def getRow(self, symbol):
-        self._rows[symbol] = self.createRow(symbol)
-        return self._rows[symbol]
+    def createArrangementColumns(self):
+        self._arrangement_cols = {}
+        for day in range(self._days):
+            for staff in self._staffs:
+                self._arrangement_cols[(day, staff)] = self.createColumn()
 
-    def getColumn(self, key):
-        if key not in self._cols:
-            self._cols[key] = self.createColumn()
-        return self._cols[key]
+    def createVacationColumns(self):
+        self._vacation_cols = {}
+        if self._vacation <= 0: return
+        for week in range(self._days // 7):
+            for staff in self._staffs:
+                self._vacation_cols[(week, staff)] = self.createColumn()
+
+    def createPeriodColumns(self):
+        self._period_cols = {}
+        for day in range(self._days):
+            for period in self._periods:
+                for title in self._titles:
+                    key = (day, period, title)
+                    if key not in self._staff_numbers: continue
+                    number = self._staff_numbers[key][0]
+                    if number <= 0: continue
+                    self._period_cols[key] = self.createColumn()
+
+    def createPreferColumns(self):
+        self._prefer_cols = {}
+        for day, staff in self._prefer_periods:
+            self._prefer_cols[(day, staff)] = self.createColumn()
 
     def createVacationRows(self):
         self._vacation_rows = {}
@@ -266,15 +286,17 @@ class DLX:
                 for weekdays in itertools.combinations(range(7), self._vacation):
                     days = set(map(lambda day: week * 7 + day, weekdays))
                     if not prefers.issubset(days): continue
-                    symbol = ('vacation', week, staff, tuple(sorted(days)))
-                    row = self.getRow(symbol)
+                    key = (week, staff, tuple(sorted(days)))
+                    symbol = ('vacation', *key)
+                    row = self.createRow(symbol)
+                    self._vacation_rows[key] = row
                     for day in days:
-                        col = self.getColumn(('arrangement', day, staff))
+                        col = self._arrangement_cols[(day, staff)]
                         self.addNode(row, col)
                         if (day, staff) in self._prefer_periods:
-                            col = self.getColumn(('prefer', day, staff))
+                            col = self._prefer_cols[(day, staff)]
                             self.addNode(row, col)
-                    col = self.getColumn(('vacation', week, staff))
+                    col = self._vacation_cols[(week, staff)]
                     self.addNode(row, col)
 
     def createArrangementRows(self):
@@ -291,27 +313,36 @@ class DLX:
                         for staffs in map(set,
                                           itertools.combinations(available_staffs,
                                                                  number)):
-                            symbol = ('arrangement', day, period, title, tuple(sorted(staffs)))
-                            row = self.getRow(symbol)
+                            key = (day, period, title, tuple(sorted(staffs)))
+                            symbol = ('arrangement', *key)
+                            row = self.createRow(symbol)
+                            self._arrangement_rows[key] = row
                             for staff in staffs:
-                                col = self.getColumn(('arrangement', day, staff))
+                                col = self._arrangement_cols[(day, staff)]
                                 self.addNode(row, col)
                                 if ((day, staff) in self._prefer_periods and
                                     period in self._prefer_periods[(day, staff)]):
-                                    col = self.getColumn(('prefer', day, staff))
+                                    col = self._prefer_cols[(day, staff)]
                                     self.addNode(row, col)
-                            col = self.getColumn(('period', day, period, title))
+                            col = self._period_cols[(day, period, title)]
                             self.addNode(row, col)
 
 
     def __init__(self, constraints):
         self.preprocess(constraints)
         self.createRoot()
-        self._rows = {}
-        self._cols = {}
+        self.createArrangementColumns()
+        self.createVacationColumns()
+        self.createPeriodColumns()
+        self.createPreferColumns()
+        print('columns: %d' % sum([len(self._arrangement_cols),
+                                   len(self._vacation_cols),
+                                   len(self._period_cols),
+                                   len(self._prefer_cols)]))
         self.createVacationRows()
         self.createArrangementRows()
-        print('rows: %d, cols: %d' % (len(self._rows), len(self._cols)))
+        print('rows: %d' % sum([len(self._vacation_rows),
+                                len(self._arrangement_rows)]))
         print([node._count for node in self._root.iterInRow()])
         self._solution = []
 
@@ -328,7 +359,7 @@ class DLX:
                     node.relinkInColumn()
             col.relinkInRow()
 
-        print([col._count for col in self._root.iterInRow()])
+        #print([col._count for col in self._root.iterInRow()])
         if self._root._right == self._root: return True
         selected = min(self._root.iterInRow(), key=lambda col: col._count)
         #print('%s: %d' % (selected, selected._count))
