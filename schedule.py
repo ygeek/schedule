@@ -323,8 +323,9 @@ class DLX:
             self._staff_periods[staff] = {}
         self.createVacationRows()
         self.createArrangementRows()
-        print('rows: %d, cols: %d' % (len(self._rows), len(self._cols)))
-        print([col._count for col in self._root.iterInRow()])
+        print('rows: %d, cols: %d, nodes: %d' % (
+            len(self._rows), len(self._cols),
+            sum(col._count for col in self._root.iterInRow())))
         self._solution = []
 
     def solve(self):
@@ -347,7 +348,8 @@ class DLX:
                     if day in self._conflictions:
                         for x, y in self._conflictions[day]:
                             if y == staff: x, y = y, x
-                            if (y in self._staff_arrangements and
+                            if (x == staff and
+                                y in self._staff_arrangements and
                                 day in self._staff_arrangements[y] and
                                 self._staff_arrangements[y][day] == period):
                                 return False
