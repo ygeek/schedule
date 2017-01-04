@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
 import sys
 #sys.setrecursionlimit(50)
@@ -445,12 +446,12 @@ class DLX:
                 row = staff_row[staff]
                 for day in days:
                     table[row][day + 1] = '公休'
-        open(filename, 'w').writelines(','.join(row) + '\n' for row in table)
+        open(filename, 'w', encoding='utf-8').writelines(','.join(row) + '\n' for row in table)
 
 
 if __name__ == '__main__':
     filename = 'schedule.yaml'
-    constraints = yaml.load(open(filename))
+    constraints = yaml.load(open(filename, encoding='utf-8'))
     #print(constraints)
     solver = DLX(constraints)
     if not solver.solve():
