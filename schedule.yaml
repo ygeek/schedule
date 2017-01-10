@@ -1,8 +1,4 @@
 date-range: [2016-12-01, 2016-12-28]
-min-rest-time: 10   # hour(s)
-vacation: 2         # day(s)
-max-rest-gap: 8     # day(s)
-max-period-type: 2
 
 period:
     - id: 1
@@ -26,25 +22,39 @@ title:
     - id: 3
       name: 主任
 
+position:
+    - id: 1
+      name: RD
+      min-rest-time: 10   # hour(s)
+      vacation: 2         # day(s)
+      max-rest-gap: 8     # day(s)
+      max-period-type: 2
+
 staff:
     - id: 1
       name: 员工A
       title-id: 1
+      position-id: 1
     - id: 2
       name: 员工B
       title-id: 1
+      position-id: 1
     - id: 3
       name: 员工C
       title-id: 1
+      position-id: 1
     - id: 4
       name: 员工D
       title-id: 1
+      position-id: 1
     - id: 5
       name: 员工E
       title-id: 1
+      position-id: 1
     - id: 6
       name: 员工F
       title-id: 1
+      position-id: 1
 
 staff-number:
     - date-range: [2016-12-01, 2016-12-28]
@@ -81,7 +91,7 @@ prefer-vacation:
         - 2016-12-03
 
 partner:
-    - date-range: [2016-12-01, 2016-12-07]
+    - date-range: [2016-12-01, 2016-12-28]
       staff-id: [3, 4]
 
 confliction:

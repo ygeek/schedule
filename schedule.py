@@ -13,15 +13,14 @@ class Period:
         self._name = name
         self._begin = begin
         self._end = end
-        self._conflictions = []
 
     def __str__(self):
         begin = datetime.datetime.fromtimestamp(
             self._begin, tz=datetime.timezone.utc).time().strftime('%T')
         end = datetime.datetime.fromtimestamp(
             self._end, tz=datetime.timezone.utc).time().strftime('%T')
-        return '<Period: #%d, name=%s, time=%s-%s, confliction=%s>' % (
-            self._id, self._name, begin, end, self._conflictions)
+        return '<Period: #%d, name=%s, time=%s-%s>' % (
+            self._id, self._name, begin, end)
 
 
 class Title:
@@ -35,15 +34,37 @@ class Title:
             self._id, self._name, self._staffs)
 
 
+class Position:
+    def __init__(self,
+                 id_,
+                 name,
+                 min_rest_time,
+                 vacation,
+                 max_rest_gap,
+                 max_period_type):
+        self._id = id_
+        self._name = name
+        self._min_rest_time = min_rest_time
+        self._vacation = vacation
+        self._max_rest_gap = max_rest_gap
+        self._max_period_type = max_period_type
+        assert 0 <= self._vacation <= 7
+
+    def __str__(self):
+        return '<Position: #%d, name=%s, min_rest_time=%d, vacation=%d, max_rest_gap=%d, max_period_type>' % (
+            self._id, self._name ,self._min_rest_time, self._vacation, self._max_rest_gap, self._max_period_type)
+
+
 class Staff:
-    def __init__(self, id_, name, title):
+    def __init__(self, id_, name, title, position):
         self._id = id_
         self._name = name
         self._titles = title
+        self._position = position
 
     def __str__(self):
-        return '<Staff: #%d, name=%s, title=%s>' % (
-            self._id, self._name, self._titles)
+        return '<Staff: #%d, name=%s, title=%s, position=%s>' % (
+            self._id, self._name, self._titles, self._position)
 
 class DLX:
     def preprocess(self, constraints):
@@ -52,21 +73,12 @@ class DLX:
             self._end = constraints['date-range'][1]
             self._days = (self._end - self._begin).days + 1
             assert self._days % 7 == 0
-            self._min_rest_time = constraints['min-rest-time'] * 60 * 60
-            self._vacation = constraints['vacation']
-            assert 0 <= self._vacation <= 7
-            self._max_rest_gap = constraints['max-rest-gap']
-            self._max_period_type = constraints['max-period-type']
 
         def period():
             self._periods = {}
             for p in constraints['period']:
                 period = Period(p['id'], p['name'], p['begin'], p['end'])
                 self._periods[period._id] = period
-            for pid, p in self._periods.items():
-                for cpid, cp in self._periods.items():
-                    if 86400 + cp._begin - p._end < self._min_rest_time:
-                        p._conflictions.append(cpid)
 
         def title():
             self._titles = {}
@@ -74,11 +86,23 @@ class DLX:
                 title = Title(t['id'], t['name'])
                 self._titles[title._id] = title
 
+        def position():
+            self._positions = {}
+            for p in constraints['position']:
+                position = Position(p['id'],
+                                    p['name'],
+                                    p['min-rest-time'] * 60 * 60,
+                                    p['vacation'],
+                                    p['max-rest-gap'],
+                                    p['max-period-type'])
+                self._positions[position._id] = position
+
         def staff():
             self._staffs = {}
             for s in constraints['staff']:
                 title = self._titles[s['title-id']]
-                staff = Staff(s['id'], s['name'], title)
+                position = self._positions[s['position-id']]
+                staff = Staff(s['id'], s['name'], title, position)
                 self._staffs[staff._id] = staff
                 title._staffs.add(staff._id)
 
@@ -167,6 +191,7 @@ class DLX:
         basic()
         period()
         title()
+        position()
         staff()
         staff_number()
         prefer_period()
@@ -264,12 +289,13 @@ class DLX:
 
     def createVacationRows(self):
         self._vacation_rows = {}
-        if self._vacation <= 0: return
         for week in range(self._days // 7):
             for staff in self._staffs:
+                vacation = self._staffs[staff]._position._vacation
+                if vacation <= 0: continue
                 prefers = set(filter(lambda day: week * 7 <= day < (week + 1) * 7,
                                      self._prefer_vacations.get(staff, [])))
-                for weekdays in itertools.combinations(range(7), self._vacation):
+                for weekdays in itertools.combinations(range(7), vacation):
                     days = set(map(lambda day: week * 7 + day, weekdays))
                     if not prefers.issubset(days): continue
                     symbol = ('vacation', week, staff, tuple(sorted(days)))
@@ -285,7 +311,6 @@ class DLX:
 
     def createArrangementRows(self):
         self._arrangement_rows = {}
-        if self._vacation >= 7: return
         for day in range(self._days):
             for period in self._periods:
                 for title in self._titles:
@@ -335,15 +360,17 @@ class DLX:
                 for staff in staffs:
                     if day - 1 in self._staff_arrangements[staff]:
                         prev_period = self._staff_arrangements[staff][day - 1]
-                        if period in self._periods[prev_period]._conflictions:
+                        rest_time = 86400 + self._periods[period]._begin - self._periods[prev_period]._end
+                        if rest_time < self._staffs[staff]._position._min_rest_time:
                             return False
                     if day + 1 in self._staff_arrangements[staff]:
                         next_period = self._staff_arrangements[staff][day + 1]
-                        if next_period in self._periods[period]._conflictions:
+                        rest_time = 86400 + self._periods[next_period]._begin - self._periods[period]._end
+                        if rest_time < self._staffs[staff]._position._min_rest_time:
                             return False
                     types = set(self._staff_periods[staff])
                     types.add(period)
-                    if len(types) > self._max_period_type:
+                    if len(types) > self._staffs[staff]._position._max_period_type:
                         return False
                     if day in self._conflictions:
                         for x, y in self._conflictions[day]:
@@ -361,11 +388,11 @@ class DLX:
                 _, week, staff, days = symbol
                 if week - 1 in self._staff_vacations[staff]:
                     prev_days = self._staff_vacations[staff][week - 1]
-                    if days[0] - prev_days[-1] > self._max_rest_gap:
+                    if days[0] - prev_days[-1] > self._staffs[staff]._position._max_rest_gap:
                         return False
                 if week + 1 in self._staff_vacations[staff]:
                     next_days = self._staff_vacations[staff][week + 1]
-                    if next_days[0] - days[-1] > self._max_rest_gap:
+                    if next_days[0] - days[-1] > self._staffs[staff]._position._max_rest_gap:
                         return False
             return True
 
@@ -408,6 +435,7 @@ class DLX:
             col.relinkInRow()
 
         #print([col._count for col in self._root.iterInRow()])
+        #print(len(list(self._root.iterInRow())))
         if self._root._right == self._root: return True
         selected = min(self._root.iterInRow(), key=lambda col: col._count)
         #print('%s: %d' % (selected, selected._count))
